@@ -19,6 +19,7 @@ data "aws_iam_policy_document" "lambda_ecr" {
 		resources = [
 			for repo in aws_ecr_repository.ecr : repo.arn
 		]
+	}
 }
 resource "aws_iam_role" "lambda_role" {
   name = "lambda-role-${var.environment}"
