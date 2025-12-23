@@ -78,7 +78,7 @@ resource "aws_lambda_permission" "patient_api" {
 	action = "lambda:InvokeFunction"
 	function_name = aws_lambda_function.lambda_function["patient_service"].function_name
 	principal = "apigateway.amazonaws.com"
-	source_arn = "${aws_apigatewayv2_apigw.execution_arn}/*/*"
+	source_arn = "${aws_apigatewayv2_api.apigw.execution_arn}/*/*"
 }
 
 resource "aws_lambda_permission" "appointment_api" {
@@ -86,5 +86,5 @@ resource "aws_lambda_permission" "appointment_api" {
 	action = "lambda:InvokeFunction"
 	function_name = aws_lambda_function.lambda_function["appointment_service"].function_name
 	principal = "apigateway.amazonaws.com"
-	source_arn = "${aws_apigatewayv2_apigw.execution_arn}/*/*"
+	source_arn = "${aws_apigatewayv2_api.apigw.execution_arn}/*/*"
 }
