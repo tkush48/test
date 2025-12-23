@@ -16,7 +16,7 @@ resource "aws_apigatewayv2_stage" "apigw_stage" {
 		destination_arn = aws_cloudwatch_log_group.apigw_lg.arn
 		format = jsonencode({
 			requestId = "$context.requestId"
-			ip = "$context.identity.surceIp"
+			ip = "$context.identity.sourceIp"
 			requestTime = "$context.requestTime"
 			httpMethod = "$context.httpMethod"
 			protocol = "$context.protocol"
