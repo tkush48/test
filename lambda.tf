@@ -53,14 +53,15 @@ resource "aws_lambda_function" "lambda_function" {
   function_name = "${each.key}-${var.environment}"
   role          = aws_iam_role.lambda_role.arn
   package_type  = "Image"
-  image_uri     = "public.ecr.aws/lambda/nodejs:24.2025.12.22.12" #dummy image for initialization
+  image_uri     = "public.ecr.aws/lambda/nodejs:18" #dummy image for initialization
+  handler = "index.handler"
   #image_uri     = "${aws_ecr_repository.ecr[each.value.ecr_repository].repository_url}:LATEST"
   timeout       = each.value.timeout
   memory_size   = each.value.memory_size
-  /*vpc_config {
+  vpc_config {
     subnet_ids         = aws_subnet.private[*].id
     security_group_ids = [aws_security_group.lambda_sg.id]
-  }*/
+  }
   tags = {
     Name = "${each.key}-${var.environment}"
   }
