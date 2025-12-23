@@ -16,9 +16,11 @@ data "aws_iam_policy_document" "lambda_ecr" {
         actions = [
 			"ecr:*"
 		]
-		resources = [
-			for repo in aws_ecr_repository.ecr : repo.arn
-		]
+		#resources = [
+		#	for repo in aws_ecr_repository.ecr : repo.arn
+		#]
+		
+		resources = ["*"]
 	}
 }
 resource "aws_iam_role" "lambda_role" {
