@@ -35,6 +35,7 @@ jobs:
       appointment_service_ecr: ${{ steps.output.outputs.appointment_service_ecr }}
       patient_service_lambda_name: ${{ steps.output.outputs.patient_service_lambda_name }}
       appointment_service_lambda_name: ${{ steps.output.outputs.appointment_service_lambda_name }}
+      apigw_endpoint: ${{ steps.output.outputs.apigw_endpoint }}
       
     
     steps:
@@ -55,7 +56,7 @@ jobs:
           terraform_wrapper: false
       
       - name: Terraform Init
-        run: terraform init
+        run: terraform init -backend-config="key=${{ github.event.inputs.environment }}/terraform.tfstate"
         #working-directory: ./test
       
       - name: Terraform Validate
@@ -91,10 +92,12 @@ jobs:
           ECR_APPOINTMENT_URL=$(terraform output -raw appointment_service)
           LAMBDA_PATIENT_NAME=$(terraform output -raw lambda_functions_names | jq -r '.patient_service')
           LAMBDA_AAPOINTMENT_NAME=$(terraform output -raw lambda_functions_names | jq -r '.appointment_service')
+          APIGW_ENDPOINT=$(terraform output -raw api_gateway_url)
           echo "patient_service_ecr=$ECR_PATIENT_URL" >> $GITHUB_OUTPUT
           echo "appointment_service_ecr=$ECR_APPOINTMENT_URL" >> $GITHUB_OUTPUT
           echo "patient_service_lambda_name=$LAMBDA_PATIENT_NAME" >> $GITHUB_OUTPUT
           echo "appointment_service_lambda_name=$LAMBDA_AAPOINTMENT_NAME" >> $GITHUB_OUTPUT
+          echo "apigw_endpoint=$APIGW_ENDPOINT" >> $GITHUB_OUTPUT
         working-directory: ./test
  
   build-and-push:
@@ -182,5 +185,5 @@ jobs:
       
       - name: Deployment complete
         run: |
-          echo "✅ Deployment to ${{ github.event.inputs.environment }} completed successfully"
-          echo "📦 Image tag: ${{ github.sha }}"
+          echo " Deployment to ${{ github.event.inputs.environment }} completed successfully"
+          echo " Image tag: ${{ github.sha }}"
