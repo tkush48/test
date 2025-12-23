@@ -21,7 +21,7 @@ on:
           - destroy
  
 env:
-  AWS_REGION: us-south-1
+  AWS_REGION: ap-south-1
   TF_VERSION: 1.6.0
  
 jobs:
@@ -31,8 +31,11 @@ jobs:
     environment: ${{ github.event.inputs.environment }}
     
     outputs:
-      ecr_api_url: ${{ steps.output.outputs.ecr_api_url }}
-      ecr_app_url: ${{ steps.output.outputs.ecr_app_url }}
+      patient_service_ecr: ${{ steps.output.outputs.patient_service_ecr }}
+      appointment_service_ecr: ${{ steps.output.outputs.appointment_service_ecr }}
+      patient_service_lambda_name: ${{ steps.output.outputs.patient_service_lambda_name }}
+      appointment_service_lambda_name: ${{ steps.output.outputs.appointment_service_lambda_name }}
+      
     
     steps:
       - name: Checkout code
@@ -53,11 +56,11 @@ jobs:
       
       - name: Terraform Init
         run: terraform init
-        working-directory: ./terraform
+        working-directory: ./test
       
       - name: Terraform Validate
         run: terraform validate
-        working-directory: ./terraform
+        working-directory: ./test
       
       - name: Terraform Plan
         if: github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply'
@@ -65,12 +68,12 @@ jobs:
           terraform plan \
             -var-file="variables/${{ github.event.inputs.environment }}.tfvars" \
             -out=tfplan
-        working-directory: ./terraform
+        working-directory: ./test
       
       - name: Terraform Apply
         if: github.event.inputs.action == 'apply'
         run: terraform apply -auto-approve tfplan
-        working-directory: ./terraform
+        working-directory: ./test
       
       - name: Terraform Destroy
         if: github.event.inputs.action == 'destroy'
@@ -78,17 +81,21 @@ jobs:
           terraform destroy \
             -var-file="variables/${{ github.event.inputs.environment }}.tfvars" \
             -auto-approve
-        working-directory: ./terraform
+        working-directory: ./test
       
       - name: Get Terraform Outputs
         if: github.event.inputs.action == 'apply'
         id: output
         run: |
-          ECR_API_URL=$(terraform output -raw ecr_repository_urls | jq -r '.api')
-          ECR_APP_URL=$(terraform output -raw ecr_repository_urls | jq -r '.app')
-          echo "ecr_api_url=$ECR_API_URL" >> $GITHUB_OUTPUT
-          echo "ecr_app_url=$ECR_APP_URL" >> $GITHUB_OUTPUT
-        working-directory: ./terraform
+          ECR_PATIENT_URL=$(terraform output -raw patient_service)
+          ECR_APPOINTMENT_URL=$(terraform output -raw appointment_service)
+          LAMBDA_PATIENT_NAME=$(terraform output -raw lambda_functions_names | jq -r '.patient_service')
+          LAMBDA_AAPOINTMENT_NAME=$(terraform output -raw lambda_functions_names | jq -r '.appointment_service')
+          echo "patient_service_ecr=$ECR_PATIENT_URL" >> $GITHUB_OUTPUT
+          echo "appointment_service_ecr=$ECR_APPOINTMENT_URL" >> $GITHUB_OUTPUT
+          echo "patient_service_lambda_name=$LAMBDA_PATIENT_NAME" >> $GITHUB_OUTPUT
+          echo "appointment_service_lambda_name=$LAMBDA_AAPOINTMENT_NAME" >> $GITHUB_OUTPUT
+        working-directory: ./test
  
   build-and-push:
     name: Build and Push Docker Images
@@ -99,7 +106,7 @@ jobs:
     
     strategy:
       matrix:
-        service: [api, app]
+        service: [patient-service, appointment-service]
     
     steps:
       - name: Checkout code
@@ -119,10 +126,10 @@ jobs:
       - name: Get ECR URL
         id: ecr-url
         run: |
-          if [ "${{ matrix.service }}" == "api" ]; then
-            echo "url=${{ needs.terraform.outputs.ecr_api_url }}" >> $GITHUB_OUTPUT
+          if [ "${{ matrix.service }}" == "patient-service" ]; then
+            echo "url=${{ needs.terraform.outputs.patient_service_ecr }}" >> $GITHUB_OUTPUT
           else
-            echo "url=${{ needs.terraform.outputs.ecr_app_url }}" >> $GITHUB_OUTPUT
+            echo "url=${{ needs.terraform.outputs.appointment_service_ecr }}" >> $GITHUB_OUTPUT
           fi
       
       - name: Build, tag, and push Docker image
@@ -130,7 +137,7 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          cd lambda/${{ matrix.service }}
+          cd app/${{ matrix.service }}
           
           # Build image
           docker build -t ${{ steps.ecr-url.outputs.url }}:$IMAGE_TAG .
@@ -164,13 +171,14 @@ jobs:
         run: |
           # Update API Lambda
           aws lambda update-function-code \
-            --function-name my-project-${{ github.event.inputs.environment }}-api \
-            --image-uri ${{ needs.terraform.outputs.ecr_api_url }}:${{ github.sha }} || true
+            --function-name ${{ needs.terraform.outputs.patient_service_lambda_name }} \
+            --image-uri ${{ needs.terraform.outputs.patient_service_ecr }}:${{ github.sha }} || true
           
           # Update App Lambda
           aws lambda update-function-code \
-            --function-name my-project-${{ github.event.inputs.environment }}-app \
-            --image-uri ${{ needs.terraform.outputs.ecr_app_url }}:${{ github.sha }} || true
+            --function-name ${{ needs.terraform.outputs.appointment_service_lambda_name }} \
+            --image-uri ${{ needs.terraform.outputs.appointment_service_ecr }}:${{ github.sha }} || true
+            
       
       - name: Deployment complete
         run: |
