@@ -36,14 +36,14 @@ resource "aws_apigatewayv2_integration" "patient_lambda" {
 	api_id = aws_apigatewayv2_api.apigw.id
 	integration_type = "AWS_PROXY"
 	integration_uri = aws_lambda_function.lambda_function["patient_service"].invoke_arn
-	integration _method = "POST"
+	integration_method = "POST"
 }
 
 resource "aws_apigatewayv2_integration" "appointment_lambda" {
 	api_id = aws_apigatewayv2_api.apigw.id
 	integration_type = "AWS_PROXY"
 	integration_uri = aws_lambda_function.lambda_function["appointment_service"].invoke_arn
-	integration _method = "POST"
+	integration_method = "POST"
 }
 
 resource "aws_apigatewayv2_routes" "patient_srv_routes" {
