@@ -42,7 +42,7 @@ resource "aws_iam_policy" "lambda_ecr_policy" {
 }
 resource "aws_iam_role_policy_attachment" "lambda_ecr_pa" {
   role       = aws_iam_role.lambda_role.name
-  policy_arn = aws_iam_policy.lambda_ecr_policy
+  policy_arn = aws_iam_policy.lambda_ecr_policy.arn
 }
 
 resource "aws_lambda_function" "lambda_function" {
