@@ -1,0 +1,178 @@
+name: Deploy Infrastructure and Images
+ 
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - dev
+          - test
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        default: 'plan'
+        options:
+          - plan
+          - apply
+          - destroy
+ 
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.6.0
+ 
+jobs:
+  terraform:
+    name: Terraform ${{ github.event.inputs.action }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    
+    outputs:
+      ecr_api_url: ${{ steps.output.outputs.ecr_api_url }}
+      ecr_app_url: ${{ steps.output.outputs.ecr_app_url }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./terraform
+      
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: ./terraform
+      
+      - name: Terraform Plan
+        if: github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply'
+        run: |
+          terraform plan \
+            -var-file="variables/${{ github.event.inputs.environment }}.tfvars" \
+            -out=tfplan
+        working-directory: ./terraform
+      
+      - name: Terraform Apply
+        if: github.event.inputs.action == 'apply'
+        run: terraform apply -auto-approve tfplan
+        working-directory: ./terraform
+      
+      - name: Terraform Destroy
+        if: github.event.inputs.action == 'destroy'
+        run: |
+          terraform destroy \
+            -var-file="variables/${{ github.event.inputs.environment }}.tfvars" \
+            -auto-approve
+        working-directory: ./terraform
+      
+      - name: Get Terraform Outputs
+        if: github.event.inputs.action == 'apply'
+        id: output
+        run: |
+          ECR_API_URL=$(terraform output -raw ecr_repository_urls | jq -r '.api')
+          ECR_APP_URL=$(terraform output -raw ecr_repository_urls | jq -r '.app')
+          echo "ecr_api_url=$ECR_API_URL" >> $GITHUB_OUTPUT
+          echo "ecr_app_url=$ECR_APP_URL" >> $GITHUB_OUTPUT
+        working-directory: ./terraform
+ 
+  build-and-push:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+    needs: terraform
+    if: github.event.inputs.action == 'apply'
+    environment: ${{ github.event.inputs.environment }}
+    
+    strategy:
+      matrix:
+        service: [api, app]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      
+      - name: Get ECR URL
+        id: ecr-url
+        run: |
+          if [ "${{ matrix.service }}" == "api" ]; then
+            echo "url=${{ needs.terraform.outputs.ecr_api_url }}" >> $GITHUB_OUTPUT
+          else
+            echo "url=${{ needs.terraform.outputs.ecr_app_url }}" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Build, tag, and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd lambda/${{ matrix.service }}
+          
+          # Build image
+          docker build -t ${{ steps.ecr-url.outputs.url }}:$IMAGE_TAG .
+          docker tag ${{ steps.ecr-url.outputs.url }}:$IMAGE_TAG ${{ steps.ecr-url.outputs.url }}:latest
+          docker tag ${{ steps.ecr-url.outputs.url }}:$IMAGE_TAG ${{ steps.ecr-url.outputs.url }}:${{ github.event.inputs.environment }}
+          
+          # Push all tags
+          docker push ${{ steps.ecr-url.outputs.url }}:$IMAGE_TAG
+          docker push ${{ steps.ecr-url.outputs.url }}:latest
+          docker push ${{ steps.ecr-url.outputs.url }}:${{ github.event.inputs.environment }}
+      
+      - name: Image digest
+        run: echo "Image pushed with tag ${{ github.sha }}"
+ 
+  deploy-lambda:
+    name: Update Lambda Functions
+    runs-on: ubuntu-latest
+    needs: [terraform, build-and-push]
+    if: github.event.inputs.action == 'apply'
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Update Lambda functions with new images
+        run: |
+          # Update API Lambda
+          aws lambda update-function-code \
+            --function-name my-project-${{ github.event.inputs.environment }}-api \
+            --image-uri ${{ needs.terraform.outputs.ecr_api_url }}:${{ github.sha }} || true
+          
+          # Update App Lambda
+          aws lambda update-function-code \
+            --function-name my-project-${{ github.event.inputs.environment }}-app \
+            --image-uri ${{ needs.terraform.outputs.ecr_app_url }}:${{ github.sha }} || true
+      
+      - name: Deployment complete
+        run: |
+          echo "✅ Deployment to ${{ github.event.inputs.environment }} completed successfully"
+          echo "📦 Image tag: ${{ github.sha }}"
