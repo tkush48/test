@@ -56,11 +56,11 @@ jobs:
       
       - name: Terraform Init
         run: terraform init
-        working-directory: ./test
+        #working-directory: ./test
       
       - name: Terraform Validate
         run: terraform validate
-        working-directory: ./test
+        #working-directory: ./test
       
       - name: Terraform Plan
         if: github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply'
@@ -68,7 +68,7 @@ jobs:
           terraform plan \
             -var-file="variables/${{ github.event.inputs.environment }}.tfvars" \
             -out=tfplan
-        working-directory: ./test
+        #working-directory: ./test
       
       - name: Terraform Apply
         if: github.event.inputs.action == 'apply'
