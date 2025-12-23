@@ -46,7 +46,7 @@ resource "aws_apigatewayv2_integration" "appointment_lambda" {
 	integration_method = "POST"
 }
 
-resource "aws_apigatewayv2_routes" "patient_srv_routes" {
+resource "aws_apigatewayv2_route" "patient_srv_routes" {
 	for_each = toset([
 		"GET /health",
 		"GET /patients",
@@ -59,7 +59,7 @@ resource "aws_apigatewayv2_routes" "patient_srv_routes" {
 	target = "integrations/${aws_apigatewayv2_integration.patient_lambda.id}"
 }
 
-resource "aws_apigatewayv2_routes" "appointment_srv_routes" {
+resource "aws_apigatewayv2_route" "appointment_srv_routes" {
 	for_each = toset([
 		"GET /health",
 		"GET /appointments",
@@ -73,7 +73,7 @@ resource "aws_apigatewayv2_routes" "appointment_srv_routes" {
 	target = "integrations/${aws_apigatewayv2_integration.appointment_lambda.id}"
 }
 
-resource "aws_lambda_permissions" "patient_api" {
+resource "aws_lambda_permission" "patient_api" {
 	statement_id = "AllowAPIgwInvoke"
 	action = "lambda:InvokeFunction"
 	function_name = aws_lambda_function.lambda_function["patient_service"].function_name
@@ -81,7 +81,7 @@ resource "aws_lambda_permissions" "patient_api" {
 	source_arn = "${aws_apigatewayv2_apigw.execution_arn}/*/*"
 }
 
-resource "aws_lambda_permissions" "appointment_api" {
+resource "aws_lambda_permission" "appointment_api" {
 	statement_id = "AllowAPIgwInvoke"
 	action = "lambda:InvokeFunction"
 	function_name = aws_lambda_function.lambda_function["appointment_service"].function_name
