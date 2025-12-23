@@ -74,7 +74,7 @@ jobs:
       - name: Terraform Apply
         if: github.event.inputs.action == 'apply'
         run: terraform apply -auto-approve tfplan
-        working-directory: ./test
+        #working-directory: ./test
       
       - name: Terraform Destroy
         if: github.event.inputs.action == 'destroy'
@@ -82,7 +82,7 @@ jobs:
           terraform destroy \
             -var-file="variables/${{ github.event.inputs.environment }}.tfvars" \
             -auto-approve
-        working-directory: ./test
+        #working-directory: ./test
       
       - name: Get Terraform Outputs
         if: github.event.inputs.action == 'apply'
@@ -98,7 +98,7 @@ jobs:
           echo "patient_service_lambda_name=$LAMBDA_PATIENT_NAME" >> $GITHUB_OUTPUT
           echo "appointment_service_lambda_name=$LAMBDA_AAPOINTMENT_NAME" >> $GITHUB_OUTPUT
           echo "apigw_endpoint=$APIGW_ENDPOINT" >> $GITHUB_OUTPUT
-        working-directory: ./test
+        #working-directory: ./test
  
   build-and-push:
     name: Build and Push Docker Images
