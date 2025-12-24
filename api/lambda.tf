@@ -58,10 +58,10 @@ resource "aws_lambda_function" "lambda_function" {
   image_uri     = "${data.terraform_remote_state.core.outputs.ecr_repository_urls["app/${replace(each.key, "_","-")}"]}:latest"
   timeout       = each.value.timeout
   memory_size   = each.value.memory_size
-  vpc_config {
-    subnet_ids         = data.terraform_remote_state.core.outputs.private_subnet_ids
-    security_group_ids = [aws_security_group.lambda_sg.id]
-  }
+  #vpc_config {
+  #  subnet_ids         = data.terraform_remote_state.core.outputs.private_subnet_ids
+  #  security_group_ids = [aws_security_group.lambda_sg.id]
+  #}
   tags = {
     Name = "${each.key}-${var.environment}"
   }
