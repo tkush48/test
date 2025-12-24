@@ -59,7 +59,7 @@ resource "aws_lambda_function" "lambda_function" {
   timeout       = each.value.timeout
   memory_size   = each.value.memory_size
   vpc_config {
-    subnet_ids         = aws_subnet.private[*].id
+    subnet_ids         = data.terraform_remote_state.core.outputs.private_subnet_ids
     security_group_ids = [aws_security_group.lambda_sg.id]
   }
   tags = {
@@ -75,7 +75,7 @@ resource "aws_lambda_function" "lambda_function" {
 
 resource "aws_security_group" "lambda_sg" {
   name   = "lambda-sg-${var.environment}"
-  vpc_id = aws_vpc.main.id
+  vpc_id = data.terraform_remote_state.core.outputs.vpc_id
 
   egress {
     from_port   = 0

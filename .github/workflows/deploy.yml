@@ -23,167 +23,224 @@ on:
 env:
   AWS_REGION: ap-south-1
   TF_VERSION: 1.6.0
- 
+
+
 jobs:
-  terraform:
-    name: Terraform ${{ github.event.inputs.action }}
-    runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
-    
-    outputs:
-      patient_service_ecr: ${{ steps.output.outputs.patient_service_ecr }}
-      appointment_service_ecr: ${{ steps.output.outputs.appointment_service_ecr }}
-      patient_service_lambda_name: ${{ steps.output.outputs.patient_service_lambda_name }}
-      appointment_service_lambda_name: ${{ steps.output.outputs.appointment_service_lambda_name }}
-      apigw_endpoint: ${{ steps.output.outputs.apigw_endpoint }}
-      
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-      
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-          terraform_wrapper: false
-      
-      - name: Terraform Init
-        run: terraform init -backend-config="key=${{ github.event.inputs.environment }}/terraform.tfstate"
-        #working-directory: ./test
-      
-      - name: Terraform Validate
-        run: terraform validate
-        #working-directory: ./test
-      
-      - name: Terraform Plan
-        if: github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply'
-        run: |
-          terraform plan \
-            -var-file="variables/${{ github.event.inputs.environment }}.tfvars" \
-            -out=tfplan
-        #working-directory: ./test
-      
-      - name: Terraform Apply
-        if: github.event.inputs.action == 'apply'
-        run: terraform apply -auto-approve tfplan
-        #working-directory: ./test
-      
-      - name: Terraform Destroy
-        if: github.event.inputs.action == 'destroy'
-        run: |
-          terraform destroy \
-            -var-file="variables/${{ github.event.inputs.environment }}.tfvars" \
-            -auto-approve
-        #working-directory: ./test
-      
-      - name: Get Terraform Outputs
-        if: github.event.inputs.action == 'apply'
-        id: output
-        run: |
-          ECR_PATIENT_URL=$(terraform output -raw patient_service)
-          ECR_APPOINTMENT_URL=$(terraform output -raw appointment_service)
-          LAMBDA_PATIENT_NAME=$(terraform output -raw lambda_functions_names | jq -r '.patient_service')
-          LAMBDA_AAPOINTMENT_NAME=$(terraform output -raw lambda_functions_names | jq -r '.appointment_service')
-          APIGW_ENDPOINT=$(terraform output -raw api_gateway_url)
-          echo "patient_service_ecr=$ECR_PATIENT_URL" >> $GITHUB_OUTPUT
-          echo "appointment_service_ecr=$ECR_APPOINTMENT_URL" >> $GITHUB_OUTPUT
-          echo "patient_service_lambda_name=$LAMBDA_PATIENT_NAME" >> $GITHUB_OUTPUT
-          echo "appointment_service_lambda_name=$LAMBDA_AAPOINTMENT_NAME" >> $GITHUB_OUTPUT
-          echo "apigw_endpoint=$APIGW_ENDPOINT" >> $GITHUB_OUTPUT
-        #working-directory: ./test
- 
-  build-and-push:
-    name: Build and Push Docker Images
-    runs-on: ubuntu-latest
-    needs: terraform
-    if: github.event.inputs.action == 'apply'
-    environment: ${{ github.event.inputs.environment }}
-    
-    strategy:
-      matrix:
-        service: [patient-service, appointment-service]
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-      
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-      
-      - name: Get ECR URL
-        id: ecr-url
-        run: |
-          if [ "${{ matrix.service }}" == "patient-service" ]; then
-            echo "url=${{ needs.terraform.outputs.patient_service_ecr }}" >> $GITHUB_OUTPUT
-          else
-            echo "url=${{ needs.terraform.outputs.appointment_service_ecr }}" >> $GITHUB_OUTPUT
-          fi
-      
-      - name: Build, tag, and push Docker image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          cd app/${{ matrix.service }}
-          
-          # Build image
-          docker build -t ${{ steps.ecr-url.outputs.url }}:$IMAGE_TAG .
-          docker tag ${{ steps.ecr-url.outputs.url }}:$IMAGE_TAG ${{ steps.ecr-url.outputs.url }}:latest
-          docker tag ${{ steps.ecr-url.outputs.url }}:$IMAGE_TAG ${{ steps.ecr-url.outputs.url }}:${{ github.event.inputs.environment }}
-          
-          # Push all tags
-          docker push ${{ steps.ecr-url.outputs.url }}:$IMAGE_TAG
-          docker push ${{ steps.ecr-url.outputs.url }}:latest
-          docker push ${{ steps.ecr-url.outputs.url }}:${{ github.event.inputs.environment }}
-      
-      - name: Image digest
-        run: echo "Image pushed with tag ${{ github.sha }}"
- 
-  deploy-lambda:
-    name: Update Lambda Functions
-    runs-on: ubuntu-latest
-    needs: [terraform, build-and-push]
-    if: github.event.inputs.action == 'apply'
-    environment: ${{ github.event.inputs.environment }}
-    
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-      
-      - name: Update Lambda functions with new images
-        run: |
-          # Update API Lambda
-          aws lambda update-function-code \
-            --function-name ${{ needs.terraform.outputs.patient_service_lambda_name }} \
-            --image-uri ${{ needs.terraform.outputs.patient_service_ecr }}:${{ github.sha }} || true
-          
-          # Update App Lambda
-          aws lambda update-function-code \
-            --function-name ${{ needs.terraform.outputs.appointment_service_lambda_name }} \
-            --image-uri ${{ needs.terraform.outputs.appointment_service_ecr }}:${{ github.sha }} || true
+    deploy-core:
+        name: Deploy core Infrastructure
+        runs-on: ubuntu-latest
+        environment: ${{ github.event.inputs.environment }}
+        outputs:
+            patient_service_ecr: ${{ steps.output.outputs.patient_service_ecr }}
+            appointment_service_ecr: ${{ steps.output.outputs.appointment_service_ecr }}
             
+        steps:
+          - name: Checkout code
+            uses: actions/checkout@v4
       
-      - name: Deployment complete
-        run: |
-          echo " Deployment to ${{ github.event.inputs.environment }} completed successfully"
-          echo " Image tag: ${{ github.sha }}"
+          - name: Configure AWS credentials
+            uses: aws-actions/configure-aws-credentials@v4
+            with:
+              aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+              aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+              aws-region: ${{ env.AWS_REGION }}
+      
+          - name: Setup Terraform
+            uses: hashicorp/setup-terraform@v3
+            with:
+              terraform_version: ${{ env.TF_VERSION }}
+              terraform_wrapper: false
+      
+          - name: Terraform Init-core
+            run: terraform init -backend-config="key=core/${{ github.event.inputs.environment }}/terraform.tfstate"
+            working-directory: ./core
+      
+          - name: Terraform Validate-core
+            run: terraform validate
+            working-directory: ./core
+          
+          - name: Terraform Plan-core
+            if: github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply'
+            run: |
+              terraform plan \
+                -var-file="variables/${{ github.event.inputs.environment }}.tfvars" \
+                -out=tfplan-core
+            working-directory: ./core
+          
+          - name: Terraform Apply-core
+            if: github.event.inputs.action == 'apply'
+            run: terraform apply -auto-approve tfplan-core
+            working-directory: ./core
+          
+          - name: Terraform Destroy-core
+            if: github.event.inputs.action == 'destroy'
+            run: |
+              terraform destroy \
+                -var-file="variables/${{ github.event.inputs.environment }}.tfvars" \
+                -auto-approve
+            working-directory: ./core
+          
+          - name: Get Terraform Outputs-core
+            if: github.event.inputs.action == 'apply'
+            id: output
+            run: |
+              ECR_PATIENT_URL=$(terraform output -raw patient_service)
+              ECR_APPOINTMENT_URL=$(terraform output -raw appointment_service)
+            working-directory: ./core
+
+
+    build-push:
+        name: Build and push Images
+        runs-on: ubuntu-latest
+        environment: ${{ github.event.inputs.environment }}
+        needs: deploy-core
+
+        strategy:
+          matrix:
+            service: [patient-service, appointment-service]
+        
+        steps:
+          - name: Checkout code
+            uses: actions/checkout@v4
+          
+          - name: Configure AWS credentials
+            uses: aws-actions/configure-aws-credentials@v4
+            with:
+              aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+              aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+              aws-region: ${{ env.AWS_REGION }}
+          
+          - name: Login to Amazon ECR
+            id: login-ecr
+            uses: aws-actions/amazon-ecr-login@v2
+          
+          - name: Get ECR URL
+            id: ecr-url
+            run: |
+              if [ "${{ matrix.service }}" == "patient-service" ]; then
+                echo "url=${{ needs.terraform.outputs.patient_service_ecr }}" >> $GITHUB_OUTPUT
+              else
+                echo "url=${{ needs.terraform.outputs.appointment_service_ecr }}" >> $GITHUB_OUTPUT
+              fi
+          
+          - name: Build, tag, and push Docker image
+            env:
+              ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+              IMAGE_TAG: ${{ github.sha }}
+            run: |
+              cd app/${{ matrix.service }}
+              
+              # Build image
+              docker build -t ${{ steps.ecr-url.outputs.url }}:$IMAGE_TAG .
+              docker tag ${{ steps.ecr-url.outputs.url }}:$IMAGE_TAG ${{ steps.ecr-url.outputs.url }}:latest
+              docker tag ${{ steps.ecr-url.outputs.url }}:$IMAGE_TAG ${{ steps.ecr-url.outputs.url }}:${{ github.event.inputs.environment }}
+              
+              # Push all tags
+              docker push ${{ steps.ecr-url.outputs.url }}:$IMAGE_TAG
+              docker push ${{ steps.ecr-url.outputs.url }}:latest
+              docker push ${{ steps.ecr-url.outputs.url }}:${{ github.event.inputs.environment }}
+          
+          - name: Image digest
+            run: echo "Image pushed with tag ${{ github.sha }}"
+
+
+
+
+
+
+
+
+
+
+
+
+
+    deploy-api:
+        name: Deploy  Infrastructure
+        runs-on: ubuntu-latest
+        environment: ${{ github.event.inputs.environment }}
+        needs: [deploy-core, build-push]
+        outputs:
+            patient_service_ecr: ${{ steps.output.outputs.patient_service_ecr }}
+            appointment_service_ecr: ${{ steps.output.outputs.appointment_service_ecr }}
+            
+        steps:
+          - name: Checkout code
+            uses: actions/checkout@v4
+      
+          - name: Configure AWS credentials
+            uses: aws-actions/configure-aws-credentials@v4
+            with:
+              aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+              aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+              aws-region: ${{ env.AWS_REGION }}
+      
+          - name: Setup Terraform
+            uses: hashicorp/setup-terraform@v3
+            with:
+              terraform_version: ${{ env.TF_VERSION }}
+              terraform_wrapper: false
+      
+          - name: Terraform Init-api
+            run: terraform init -backend-config="key=api/${{ github.event.inputs.environment }}/terraform.tfstate"
+            working-directory: ./api
+      
+          - name: Terraform Validate-api
+            run: terraform validate
+            working-directory: ./api
+          
+          - name: Terraform Plan-api
+            if: github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply'
+            run: |
+              terraform plan \
+                -var-file="variables/${{ github.event.inputs.environment }}.tfvars" \
+                -out=tfplan-api
+            working-directory: ./api
+          
+          - name: Terraform Apply-api
+            if: github.event.inputs.action == 'apply'
+            run: terraform apply -auto-approve tfplan-api
+            working-directory: ./api
+          
+          - name: Terraform Destroy-api
+            if: github.event.inputs.action == 'destroy'
+            run: |
+              terraform destroy \
+                -var-file="variables/${{ github.event.inputs.environment }}.tfvars" \
+                -auto-approve
+            working-directory: ./api
+          
+          - name: Get Terraform Outputs-core
+            if: github.event.inputs.action == 'apply'
+            id: output
+            run: |
+               LAMBDA_PATIENT_NAME=$(terraform output -raw lambda_functions_names | jq -r '.patient_service')
+               LAMBDA_AAPOINTMENT_NAME=$(terraform output -raw lambda_functions_names | jq -r '.appointment_service')
+               APIGW_ENDPOINT=$(terraform output -raw api_gateway_url)
+               echo "patient_service_lambda_name=$LAMBDA_PATIENT_NAME" >> $GITHUB_OUTPUT
+               echo "appointment_service_lambda_name=$LAMBDA_AAPOINTMENT_NAME" >> $GITHUB_OUTPUT
+               echo "apigw_endpoint=$APIGW_ENDPOINT" >> $GITHUB_OUTPUT
+            working-directory: ./api
+          - name: Update lambda
+            run: |
+                LAMBDA_PATIENT_NAME=${terraform output -raw lambda_functions_names | jq -r '.patient_service')
+                LAMBDA_AAPOINTMENT_NAME=$(terraform output -raw lambda_functions_names | jq -r '.appointment_service')
+                # Update API Lambda
+              aws lambda update-function-code \
+                --function-name $LAMBDA_PATIENT_NAME \
+                --image-uri ${{ needs.terraform.outputs.patient_service_ecr }}:${{ github.sha }} || true
+              
+              # Update App Lambda
+              aws lambda update-function-code \
+                --function-name $LAMBDA_AAPOINTMENT_NAME \
+                --image-uri ${{ needs.terraform.outputs.appointment_service_ecr }}:${{ github.sha }} || true
+            working-directory: ./api
+
+
+
+
+
+
+
+
+

@@ -1,9 +1,3 @@
-output "patient_service" {
-  value = aws_ecr_repository.ecr["app/patient-service"].name
-}
-output "appointment_service" {
-  value = aws_ecr_repository.ecr["app/appointment-service"].name
-}
 output "lambda_functions_arns" {
   value = { for k, v in aws_lambda_function.lambda_function : k => v.arn }
 }

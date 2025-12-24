@@ -19,10 +19,3 @@ variable "vpc_az" {
 variable "ecr_repo_name" {
   type = list(string)
 }
-variable "lambda_functions" {
-  type = map(object({
-    ecr_repository = string
-    timeout        = number
-    memory_size    = number
-  }))
-}
