@@ -53,9 +53,9 @@ resource "aws_lambda_function" "lambda_function" {
   function_name = "${each.key}-${var.environment}"
   role          = aws_iam_role.lambda_role.arn
   package_type  = "Image"
-  image_uri     = "public.ecr.aws/lambda/nodejs:18" #dummy image for initialization
-  handler = "index.handler"
-  #image_uri     = "${aws_ecr_repository.ecr[each.value.ecr_repository].repository_url}:LATEST"
+  #image_uri     = "public.ecr.aws/lambda/nodejs:18" #dummy image for initialization
+  #handler = "index.handler"
+  image_uri     = "${data.terraform_remote_state.core.outputs.ecr_repository_urls[each.key]}:latest"
   timeout       = each.value.timeout
   memory_size   = each.value.memory_size
   vpc_config {
