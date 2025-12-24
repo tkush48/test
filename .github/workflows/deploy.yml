@@ -117,9 +117,9 @@ jobs:
             id: ecr-url
             run: |
               if [ "${{ matrix.service }}" == "patient-service" ]; then
-                echo "url=${{ needs.terraform.outputs.patient_service_ecr }}" >> $GITHUB_OUTPUT
+                echo "url=${{ needs.deploy-core.outputs.patient_service_ecr }}" >> $GITHUB_OUTPUT
               else
-                echo "url=${{ needs.terraform.outputs.appointment_service_ecr }}" >> $GITHUB_OUTPUT
+                echo "url=${{ needs.deploy-core.outputs.appointment_service_ecr }}" >> $GITHUB_OUTPUT
               fi
           
           - name: Build, tag, and push Docker image
@@ -130,7 +130,7 @@ jobs:
               cd app/${{ matrix.service }}
               
               # Build image
-              docker build -t ${{ steps.ecr-url.outputs.url }}:$IMAGE_TAG .
+              docker build -t  ${{ steps.ecr-url.outputs.url }}:$IMAGE_TAG .
               docker tag ${{ steps.ecr-url.outputs.url }}:$IMAGE_TAG ${{ steps.ecr-url.outputs.url }}:latest
               docker tag ${{ steps.ecr-url.outputs.url }}:$IMAGE_TAG ${{ steps.ecr-url.outputs.url }}:${{ github.event.inputs.environment }}
               
@@ -147,9 +147,9 @@ jobs:
         runs-on: ubuntu-latest
         environment: ${{ github.event.inputs.environment }}
         needs: [deploy-core, build-push]
-        outputs:
-            patient_service_ecr: ${{ steps.output.outputs.patient_service_ecr }}
-            appointment_service_ecr: ${{ steps.output.outputs.appointment_service_ecr }}
+        #outputs:
+        #    patient_service_ecr: ${{ steps.output.outputs.patient_service_ecr }}
+        #    appointment_service_ecr: ${{ steps.output.outputs.appointment_service_ecr }}
             
         steps:
           - name: Checkout code
@@ -215,12 +215,12 @@ jobs:
                 # Update API Lambda
                 aws lambda update-function-code \
                  --function-name $LAMBDA_PATIENT_NAME \
-                 --image-uri ${{ needs.terraform.outputs.patient_service_ecr }}:${{ github.sha }} || true
+                 --image-uri ${{ needs.deploy-core.outputs.patient_service_ecr }}:${{ github.sha }} || true
               
                 # Update App Lambda
                 aws lambda update-function-code \
                 --function-name $LAMBDA_AAPOINTMENT_NAME \
-                --image-uri ${{ needs.terraform.outputs.appointment_service_ecr }}:${{ github.sha }} || true
+                --image-uri ${{ needs.deploy-core.outputs.appointment_service_ecr }}:${{ github.sha }} || true
             working-directory: ./api
 
 
