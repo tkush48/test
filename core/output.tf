@@ -1,8 +1,8 @@
 output "patient_service" {
-  value = aws_ecr_repository.ecr["app/patient-service"].name
+  value = aws_ecr_repository.ecr["app/patient-service"].repository_url
 }
 output "appointment_service" {
-  value = aws_ecr_repository.ecr["app/appointment-service"].name
+  value = aws_ecr_repository.ecr["app/appointment-service"].repository_url
 }
 output "private_subnet_ids" {
 	value = aws_subnet.private[*].id
