@@ -1,5 +1,4 @@
 name: Deploy Infrastructure and Images
- 
 on:
   workflow_dispatch:
     inputs:
@@ -142,19 +141,7 @@ jobs:
           
           - name: Image digest
             run: echo "Image pushed with tag ${{ github.sha }}"
-
-
-
-
-
-
-
-
-
-
-
-
-
+            
     deploy-api:
         name: Deploy  Infrastructure
         runs-on: ubuntu-latest
@@ -226,20 +213,15 @@ jobs:
                 LAMBDA_PATIENT_NAME=${terraform output -raw lambda_functions_names | jq -r '.patient_service')
                 LAMBDA_AAPOINTMENT_NAME=$(terraform output -raw lambda_functions_names | jq -r '.appointment_service')
                 # Update API Lambda
-              aws lambda update-function-code \
-                --function-name $LAMBDA_PATIENT_NAME \
-                --image-uri ${{ needs.terraform.outputs.patient_service_ecr }}:${{ github.sha }} || true
+                aws lambda update-function-code \
+                 --function-name $LAMBDA_PATIENT_NAME \
+                 --image-uri ${{ needs.terraform.outputs.patient_service_ecr }}:${{ github.sha }} || true
               
-              # Update App Lambda
-              aws lambda update-function-code \
+                # Update App Lambda
+                aws lambda update-function-code \
                 --function-name $LAMBDA_AAPOINTMENT_NAME \
                 --image-uri ${{ needs.terraform.outputs.appointment_service_ecr }}:${{ github.sha }} || true
             working-directory: ./api
-
-
-
-
-
 
 
 
