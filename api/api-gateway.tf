@@ -48,7 +48,6 @@ resource "aws_apigatewayv2_integration" "appointment_lambda" {
 
 resource "aws_apigatewayv2_route" "patient_srv_routes" {
 	for_each = toset([
-		"GET /health",
 		"GET /patients",
 		"GET /patients/{id}",
 		"POST /patients"
