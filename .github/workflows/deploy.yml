@@ -85,6 +85,8 @@ jobs:
             run: |
               ECR_PATIENT_URL=$(terraform output -raw patient_service)
               ECR_APPOINTMENT_URL=$(terraform output -raw appointment_service)
+              echo "patient_service_ecr=$ECR_PATIENT_URL" >> $GITHUB_OUTPUT
+              echo "appointment_service_ecr=$ECR_APPOINTMENT_URL" >> $GITHUB_OUTPUT
             working-directory: ./core
 
 
